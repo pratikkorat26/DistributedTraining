@@ -237,11 +237,17 @@ def run_epoch(
             logits = model(images)
             loss = criterion(logits, targets)
 
-        if torch.isnan(loss):
-            logging.error("NaN loss encountered. Aborting.")
-            if is_dist():
-                dist.barrier()
-            sys.exit(2)
+        is_finite = torch.isfinite(loss.detach())
+        abort_flag = torch.tensor(
+            [0 if is_finite else 1],
+            device=device,
+            dtype=torch.int32
+        )
+        if is_dist():
+            dist.all_reduce(abort_flag, op=dist.ReduceOp.SUM)
+        if abort_flag.item() > 0:
+            logging.error("Non-finite loss detected on at least one rank. Aborting cleanly.")
+            raise RuntimeError("non-finite loss")
 
         if scaler is not None:
             scaler.scale(loss).backward()
@@ -346,7 +352,7 @@ def train(cfg: Config) -> None:
 
     scaler = None
     if cfg.amp and torch.cuda.is_available():
-        scaler = torch.amp.GradScaler(device = "cuda", enabled=cfg.amp and torch.cuda.is_available())
+        scaler = torch.amp.GradScaler(enabled=True)
 
     for epoch in range(1, cfg.epochs + 1):
         if is_dist() and train_sampler is not None:
@@ -411,7 +417,11 @@ def parse_args() -> Config:
 
 def main() -> None:
     cfg = parse_args()
-    train(cfg)
+    try:
+        train(cfg)
+    finally:
+        # we never strand process group even if an exception is raised
+        cleanup_distributed()
 
 
 if __name__ == "__main__":

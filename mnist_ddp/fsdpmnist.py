@@ -1,10 +1,10 @@
 """
-MNIST trainer — DDP-ready, production-grade baseline
+MNIST trainer — FSDP-ready, production-grade baseline
 
 Properties
 - Single-file. No persistence.
 - Deterministic by default. Seeded per-rank.
-- Native PyTorch DistributedDataParallel via torchrun.
+- Native Fully Sharded Distributed Training via torchrun.
 - AMP on CUDA, grad clipping, cosine LR.
 - Config via CLI. Clean rank-0 logging. Optional torch.compile.
 
